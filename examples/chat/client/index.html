@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+
+		<title>Chat | Organics</title>
+		<script type="text/javascript" src="/javascript/organics.js"></script>
+		<script type="text/javascript" src="/chat.js"></script>
+		<style>
+			html, body {
+				height: 100%;
+				margin: 0;
+				padding: 0;
+				overflow: hidden;
+				font-size: .16em;
+			}
+
+			#messages {
+				display: block;
+				width: 100%;
+				height: 95%;
+				margin: 0;
+				padding: .16em;
+			}
+
+			#chat_input {
+				width: 100%;
+				height: 3%;
+				margin: 0;
+				padding: .16em;
+			}
+		</style>
+	</head>
+	<body>
+		<textarea id="messages" readonly></textarea>
+		<input type="text" id="chat_input">
+	</body>
+</html>
+
