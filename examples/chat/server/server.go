@@ -5,7 +5,7 @@
 // Simple chat server and client example
 package main
 
-import(
+import (
 	"code.google.com/p/organics"
 
 	// For sessions being stored in-memory:
@@ -14,15 +14,15 @@ import(
 	// Or use this line for sessions being saved on-file:
 	//"code.google.com/p/organics/provider/filesystem"
 
+	"log"
 	"net/http"
 	"sync"
-	"log"
 	//"os"
 )
 
-var(
-	server *organics.Server
-	recentMessages []string
+var (
+	server               *organics.Server
+	recentMessages       []string
 	recentMessagesAccess sync.RWMutex
 )
 
@@ -33,8 +33,8 @@ func init() {
 
 func sendMessageToAll(msg string) {
 	recentMessagesAccess.Lock()
-	if len(recentMessages) + 1 > 25 {
-		recentMessages = recentMessages[len(recentMessages) - 25:len(recentMessages)]
+	if len(recentMessages)+1 > 25 {
+		recentMessages = recentMessages[len(recentMessages)-25 : len(recentMessages)]
 	}
 	recentMessages = append(recentMessages, msg)
 	recentMessagesAccess.Unlock()
@@ -55,7 +55,7 @@ func doConnect(connection *organics.Connection) {
 
 	// Wait untill they disconnect
 	go func() {
-		<- connection.DeathNotify()
+		<-connection.DeathNotify()
 
 		username := connection.Get("username", "").(string)
 		sendMessageToAll(username + " has left.")
@@ -122,4 +122,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-

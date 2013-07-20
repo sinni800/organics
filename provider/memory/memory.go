@@ -25,4 +25,3 @@ func Provider() organics.SessionProvider {
 	p.sessions = make(map[string]*organics.Session)
 	return p
 }
-

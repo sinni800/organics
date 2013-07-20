@@ -5,7 +5,7 @@
 // Simple hello world server and client demonstration
 package main
 
-import(
+import (
 	"code.google.com/p/organics"
 
 	// For sessions being stored in-memory:
@@ -14,9 +14,9 @@ import(
 	// Or use this line for sessions being saved on-file:
 	//"code.google.com/p/organics/provider/filesystem"
 
+	"log"
 	"net/http"
 	"time"
-	"log"
 	//"os"
 )
 
@@ -32,25 +32,25 @@ func HandleConnect(connection *organics.Connection) {
 
 		// Initially, the page will load, so we want to display the time right away.
 		intervalTime := 0 * time.Second
-		for{
-			select{
-				case <-time.After(intervalTime):
-					// Now that we've set the time once, future updates should be in intervals
-					// of 1 second
-					intervalTime = 1 * time.Second
+		for {
+			select {
+			case <-time.After(intervalTime):
+				// Now that we've set the time once, future updates should be in intervals
+				// of 1 second
+				intervalTime = 1 * time.Second
 
-					// We store the current time in their Connection's Store, and then add 1 to it
-					currentTime := connection.Get("time", float64(0)).(float64)
-					currentTime += 1
-					connection.Set("time", currentTime)
+				// We store the current time in their Connection's Store, and then add 1 to it
+				currentTime := connection.Get("time", float64(0)).(float64)
+				currentTime += 1
+				connection.Set("time", currentTime)
 
-					// Lets give the browser an request
-					connection.Request("SetConnectionTime", currentTime)
+				// Lets give the browser an request
+				connection.Request("SetConnectionTime", currentTime)
 
-				case <-deathNotify:
-					// If they disconnect, we'll basically 'pause' this timer by killing the
-					// goroutine, next time they connect we'll start an new timer (again).
-					return
+			case <-deathNotify:
+				// If they disconnect, we'll basically 'pause' this timer by killing the
+				// goroutine, next time they connect we'll start an new timer (again).
+				return
 			}
 		}
 	}()
@@ -67,30 +67,30 @@ func HandleConnect(connection *organics.Connection) {
 			// This timer is just starting, so we want it to send an update to the browser ASAP
 			intervalTime := 0 * time.Second
 
-			for{
-				select{
-					case <-time.After(intervalTime):
-						// Now that we've set the time once, future updates should be in intervals
-						// of 1 second
-						intervalTime = 1 * time.Second
+			for {
+				select {
+				case <-time.After(intervalTime):
+					// Now that we've set the time once, future updates should be in intervals
+					// of 1 second
+					intervalTime = 1 * time.Second
 
-						// We store the current time in their Sessions's Store, and then add 1 to it
-						currentTime := session.Get("time", float64(0)).(float64)
-						currentTime += 1
-						session.Set("time", currentTime)
+					// We store the current time in their Sessions's Store, and then add 1 to it
+					currentTime := session.Get("time", float64(0)).(float64)
+					currentTime += 1
+					session.Set("time", currentTime)
 
-						// Lets give each browser tab (connection) an request, we can do that by
-						// using Session.Request, which performs an request to each connection that
-						// is represented by that session.
-						session.Request("SetSessionTime", currentTime)
+					// Lets give each browser tab (connection) an request, we can do that by
+					// using Session.Request, which performs an request to each connection that
+					// is represented by that session.
+					session.Request("SetSessionTime", currentTime)
 
-					case <-session.QuietNotify():
-						// If the session is quiet, it means there are no connections right now
-						// that represent the session, so we can stop updating their session timer.
+				case <-session.QuietNotify():
+					// If the session is quiet, it means there are no connections right now
+					// that represent the session, so we can stop updating their session timer.
 
-						// Be sure to clear this, otherwise the timer will never start again!
-						session.Delete("hasTimer")
-						return
+					// Be sure to clear this, otherwise the timer will never start again!
+					session.Delete("hasTimer")
+					return
 				}
 			}
 		}()
@@ -156,4 +156,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-

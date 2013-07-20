@@ -5,15 +5,15 @@
 // Package filesystem implements file-based session storage.
 package filesystem
 
-import(
+import (
 	"code.google.com/p/organics"
-	"path/filepath"
 	"io/ioutil"
-	"strings"
-	"net/url"
-	"sync"
 	"log"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 )
 
 func stringSections(s string, n int) []string {
@@ -33,9 +33,9 @@ func sessionKeyToPath(key string) string {
 }
 
 type provider struct {
-	sessions map[string]*organics.Session
+	sessions         map[string]*organics.Session
 	fileWritingLocks map[string]*sync.Mutex
-	directory string
+	directory        string
 }
 
 func (p *provider) getWriteLock(key string) *sync.Mutex {
@@ -147,4 +147,3 @@ func Provider(directory string) (organics.SessionProvider, error) {
 	}
 	return p, nil
 }
-
