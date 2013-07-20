@@ -51,7 +51,7 @@ func (l *lockedSessionProvider) Get(key string) *Session {
 
 // Session represents an user's session, which is built up of zero to multiple Connection objects.
 type Session struct {
-	Store
+	*Store
 
 	access sync.RWMutex
 
@@ -206,7 +206,6 @@ func NewSession() *Session {
 	s := new(Session)
 	s.deathNotify = make(chan bool)
 	s.connections = make(map[interface{}]*Connection)
-	s.Store.data = make(map[interface{}]interface{})
-	s.Store.dataChangedNotify = make(chan bool, 1)
+	s.Store = NewStore()
 	return s
 }

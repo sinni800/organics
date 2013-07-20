@@ -11,19 +11,20 @@ import (
 	"time"
 )
 
-type ConnectionMethod uint8
+// Method describes an single connection method.
+type Method uint8
 
 const (
-	LongPolling ConnectionMethod = iota
+	LongPolling Method = iota
 	WebSocket
 )
 
-// String returns an string formatted version of the specified method, or an empty string if an
-// invalid method string is passed in.
+// String returns an string formatted version of the specified method, or an
+// empty string if the method is invalid (unknown).
 //
-// For example: organics.MethodString(organics.MethodWebSocket) will return simply "WebSocket"
-func MethodString(method ConnectionMethod) string {
-	switch method {
+// For example: WebSocket.String() -> "WebSocket"; LongPolling.String() -> "LongPolling"
+func (m Method) String() string {
+	switch m {
 	case LongPolling:
 		return "LongPolling"
 
@@ -36,7 +37,7 @@ func MethodString(method ConnectionMethod) string {
 // Connection represents an single connection to an web browser, this connection will remain for
 // as long as the user keeps the web page open through their browser.
 type Connection struct {
-	Store
+	*Store
 
 	key                                                      interface{}
 	access                                                   sync.RWMutex
@@ -44,7 +45,7 @@ type Connection struct {
 	deathNotify, deathCompletedNotify, deathWantedNotify     chan bool
 	onDeathNotifications                                     []chan bool
 	address                                                  string
-	method                                                   ConnectionMethod
+	method                                                   Method
 	session                                                  *Session
 	disconnectFromTimeout, disconnectTimerReset, performPing chan bool
 	lpWaitingForDeath, hasDisconnectTimer                    bool
@@ -111,8 +112,7 @@ func (c *Connection) Request(requestName interface{}, sequence ...interface{}) {
 
 // String returns an string representation of this Connection.
 func (c *Connection) String() string {
-	method := MethodString(c.method)
-	return fmt.Sprintf("Connection(%s, %s, Dead=%t, Method=%s)", c.Address(), c.Store.String(), c.Dead(), method)
+	return fmt.Sprintf("Connection(%s, %s, Dead=%t, Method=%s)", c.Address(), c.Store.String(), c.Dead(), c.Method().String())
 }
 
 // Address returns the client address of this connection, usually for logging purposes.
@@ -123,9 +123,9 @@ func (c *Connection) Address() string {
 	return c.address
 }
 
-// Method returns one of the predefined constant organics.ConnectionMethod's which represent the method this
-// connection is based upon.
-func (c *Connection) Method() ConnectionMethod {
+// Method returns one of the predefined constant organics.ConnectionMethod's
+// which represent the method this connection is based upon.
+func (c *Connection) Method() Method {
 	// Note: no locking needed, never written to past creation time.
 	return c.method
 }
@@ -237,13 +237,13 @@ func (c *Connection) resetDisconnectTimer() {
 	c.disconnectTimerReset <- true
 }
 
-func newConnection(address string, session *Session, key interface{}, method ConnectionMethod) *Connection {
+func newConnection(address string, session *Session, key interface{}, method Method) *Connection {
 	c := new(Connection)
 	c.key = key // Used for removal from session via removeConnection()
 	c.deathNotify = make(chan bool)
 	c.deathWantedNotify = make(chan bool)
 	c.deathCompletedNotify = make(chan bool)
-	c.data = make(map[interface{}]interface{})
+	c.Store = NewStore()
 	c.messageChan = make(chan *message)
 	c.requestCompleters = make(map[float64]interface{})
 	c.session = session

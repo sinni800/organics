@@ -316,7 +316,7 @@ func (s *Server) ensureDataChangedRoutineExists(session *Session, sessionKey str
 				case <-deathNotify:
 					return
 
-				case <-session.Store.dataChangedNotify:
+				case <-session.Store.ChangeNotify():
 					sp := s.Provider()
 					if sp == nil {
 						panic("No session provider is installed on the server")

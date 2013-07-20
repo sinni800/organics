@@ -21,13 +21,42 @@ const (
 type Store struct {
 	access            sync.RWMutex
 	data              map[interface{}]interface{}
-	dataChangedNotify chan bool
+	dataChangeNotifiers []chan bool
 }
 
-func (s *Store) dataChanged() {
-	if s.dataChangedNotify != nil {
-		s.dataChangedNotify <- true
+func (s *Store) sendDataChanged() {
+	for _, ch := range s.dataChangeNotifiers {
+		ch <- true
+		close(ch)
 	}
+	s.dataChangeNotifiers = make([]chan bool, 0)
+}
+
+// ChangeNotify returns an channel over which true will be sent once the data
+// inside this store has changed.
+//
+// After true is sent, the channel is closed. As such, if you intend to receive
+// notifications forever, you'll need to constantly create a new channel with
+// an call to this function.
+func (s *Store) ChangeNotify() chan bool {
+	s.access.Lock()
+	defer s.access.Unlock()
+
+	ch := make(chan bool, 1)
+	s.dataChangeNotifiers = append(s.dataChangeNotifiers, ch)	
+	return ch
+}
+
+// Data returns an copy of this store's underlying data map.
+func (s *Store) Data() map[interface{}]interface{} {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
+	cpy := make(map[interface{}]interface{}, len(s.data))
+	for key, value := range s.data {
+		cpy[key] = value
+	}
+	return cpy
 }
 
 // Implements encoding/gob.GobEncoder interface
@@ -75,6 +104,9 @@ func (s *Store) GobDecode(data []byte) error {
 
 // String returns an string representation of this Store
 func (s *Store) String() string {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
 	var b bytes.Buffer
 	b.WriteString("Store(")
 	ms := fmt.Sprint(s.data)
@@ -100,21 +132,27 @@ func (s *Store) Set(key, value interface{}) {
 	defer s.access.Unlock()
 
 	s.data[key] = value
-	s.dataChanged()
+	s.sendDataChanged()
 }
 
 // Get returns the specified key from this Store's data, or if this Store does not have the
 // specified key, then the key is set to the default value, and the default value is returned.
 func (s *Store) Get(key, defaultValue interface{}) interface{} {
-	s.access.Lock()
-	defer s.access.Unlock()
+	s.access.RLock()
 
 	value, ok := s.data[key]
 	if !ok {
+		s.access.RUnlock()
+
+		s.access.Lock()
+		s.access.Unlock()
+
 		s.data[key] = defaultValue
-		s.dataChanged()
+		s.sendDataChanged()
 		return defaultValue
 	}
+
+	s.access.RUnlock()
 	return value
 }
 
@@ -125,7 +163,7 @@ func (s *Store) Delete(key interface{}) {
 	defer s.access.Unlock()
 
 	delete(s.data, key)
-	s.dataChanged()
+	s.sendDataChanged()
 }
 
 // Reset resets this Store such that there is absolutely no data inside of it.
@@ -134,5 +172,14 @@ func (s *Store) Reset() {
 	defer s.access.Unlock()
 
 	s.data = make(map[interface{}]interface{})
-	s.dataChanged()
+	s.sendDataChanged()
 }
+
+// NewStore returns an new intialized *Store.
+func NewStore() *Store {
+	s := new(Store)
+	s.data = make(map[interface{}]interface{})
+	s.dataChangeNotifiers = make([]chan bool, 0)
+	return s
+}
+
