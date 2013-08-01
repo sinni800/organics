@@ -518,7 +518,6 @@ var Organics = new function() {
 	this.Disconnect = "a1b2c3d4e5f6g7h8i9j0";
 
 	// Constants (save extra bytes by making them acronyms)
-	this.__rtWebSocketEstablishConnection = "wsec"; // web-socket-establish-connection
 	this.__rtLongPollEstablishConnection  = "lpec"; // long-poll-establish-connection
 	this.__rtLongPoll                     = "lp";   // long-poll
 	this.__rtMessage                      = "m";    // message
@@ -546,6 +545,24 @@ var Organics = new function() {
 		if(Organics.Debug) {
 			if(window.console) {
 				console.log("Organics: " + msg);
+			}
+		}
+	}
+
+	if(this.WebSocketSupported) {
+		var ws = null;
+		if("WebSocket" in window) {
+			ws = window.WebSocket;
+		} else {
+			ws = window.MozWebSocket;
+		}
+		if(ws.CLOSED <= 2) {
+			// < hybi 07
+			// Old WebSocket versions not supported (IOS, etc).
+			this.WebSocketSupported = false;
+
+			if(window.console) {
+				console.log("Organics: Browser only supports < hybi 07 WebSockets; falling back to long polling.");
 			}
 		}
 	}
@@ -581,21 +598,6 @@ var Organics = new function() {
 	// Tells weather (str) ends with (w)
 	this.__StringEndsWith = function(str, w) {
 		return str.slice(-w.length) == w;
-	}
-
-	this.__GetCookie = function(name) {
-		var nameEQ = name + "=";
-		var ca = document.cookie.split(";");
-		for(var i = 0; i < ca.length; i++) {
-			var c = ca[i];
-			while(c.charAt(0) == " ") {
-				c = c.substring(1, c.length);
-			}
-			if(c.indexOf(nameEQ) == 0) {
-				return c.substring(nameEQ.length, c.length);
-			}
-		}
-		return null;
 	}
 
 	// Returns an new XMLHttpRequest object for this browser
@@ -908,28 +910,21 @@ var Organics = new function() {
 
 
 		if(Organics.WebSocketSupported) {
-			var reqType = Organics.__rtWebSocketEstablishConnection;
-		} else {
-			var reqType = Organics.__rtLongPollEstablishConnection;
+			self.__connectWebSocket()
+			return
 		}
 
 		// Perform the create session request
 		Organics.__ajax(self.__HTTP_URL, "POST", {
 			complete: function(xhr) {
-				if(Organics.WebSocketSupported) {
-					self.__logMessage("-> Create session request successful");
-					self.__connectWebSocket()
-
-				} else {
-					self.__connectionId = xhr.responseText;
-					self.__logMessage("-> Create session request successful: connected to server");
-					self.__connected = true;
-					self.__connecting = false;
-					setTimeout(function() {
-						self.__doLongPolling();
-					}, 0);
-					self.__handleConnect();
-				}
+				self.__connectionId = xhr.responseText;
+				self.__logMessage("-> Create session request successful: connected to server");
+				self.__connected = true;
+				self.__connecting = false;
+				setTimeout(function() {
+					self.__doLongPolling();
+				}, 0);
+				self.__handleConnect();
 			},
 			error: function(xhr, msg) {
 				// Handle the disconnection error, use an delay of 0.25 seconds to ensure that
@@ -939,7 +934,7 @@ var Organics = new function() {
 		}, null, self.Timeout, {
 			// This informs the server this is an session creation request, and they it should
 			// respond immedietly after ensuring we have an request.
-			"X-Organics-Req": reqType
+			"X-Organics-Req": Organics.__rtLongPollEstablishConnection
 		});
 	}
 
@@ -1087,7 +1082,6 @@ var Organics = new function() {
 					}, response, null, {
 						"X-Organics-Req": Organics.__rtMessage,
 						"X-Organics-Conn": self.__connectionId
-						//"X-Organics-CSRF": Organics.__GetCookie("X-Organics-CSRF")
 					});
 				}
 
@@ -1103,7 +1097,6 @@ var Organics = new function() {
 		}, null, null, {
 			"X-Organics-Req": Organics.__rtLongPoll,
 			"X-Organics-Conn": self.__connectionId
-			//"X-Organics-CSRF": Organics.__GetCookie("X-Organics-CSRF")
 		});
 	}
 
@@ -1190,7 +1183,6 @@ var Organics = new function() {
 			}, encoded, self.Timeout, {
 				"X-Organics-Req": Organics.__rtMessage,
 				"X-Organics-Conn": self.__connectionId
-				//"X-Organics-CSRF": Organics.__GetCookie("X-Organics-CSRF")
 			});
 		}
 	}

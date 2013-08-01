@@ -15,14 +15,20 @@ import (
 type Method uint8
 
 const (
+	// Describes the long polling connection method.
 	LongPolling Method = iota
+
+	// Describes the web socket connection method.
 	WebSocket
 )
 
 // String returns an string formatted version of the specified method, or an
 // empty string if the method is invalid (unknown).
 //
-// For example: WebSocket.String() -> "WebSocket"; LongPolling.String() -> "LongPolling"
+// For example:
+//  WebSocket.String() would return "WebSocket"
+//  LongPolling.String() would return "LongPolling"
+//
 func (m Method) String() string {
 	switch m {
 	case LongPolling:
@@ -34,8 +40,9 @@ func (m Method) String() string {
 	return ""
 }
 
-// Connection represents an single connection to an web browser, this connection will remain for
-// as long as the user keeps the web page open through their browser.
+// Connection represents an single connection to an web browser, this
+// connection will remain for as long as the user keeps the web page open
+// through their browser.
 type Connection struct {
 	*Store
 
@@ -43,7 +50,7 @@ type Connection struct {
 	access                                                   sync.RWMutex
 	dead                                                     bool
 	deathNotify, deathCompletedNotify, deathWantedNotify     chan bool
-	onDeathNotifications                                     []chan bool
+	deathNotifications                                       []chan bool
 	address                                                  string
 	method                                                   Method
 	session                                                  *Session
@@ -57,20 +64,24 @@ type Connection struct {
 
 // Request makes an request to the other end of this Connection.
 //
-// If this connection is dead, or this Connection's Session is dead, this function is no-op.
+// If this connection is dead, or this Connection's Session is dead, this
+// function is no-op.
 //
-// The first parameter to this function is the request name, this can be any value that
-// encoding/json.Marshal() will accept.
+// The first parameter to this function is the request name, this can be any
+// value that the json.Marshal() function will accept.
 //
-// The second parameter(s) is any sequence of arguments to the request, as many as you wish, while
-// noting these arguments must be accepted by encoding/json.Marshal().
+// The second parameter(s) is any sequence of arguments to the request, as many
+// as you wish, while noting these arguments must be accepted by the
+// json.Marshal() function.
 //
-// The third and (optional) argument is an function that will be called when the request completes,
-// and it will be given the response data from the request, it should be of type:
+// The third (and optional) argument is an function that will be called when
+// the request has completed (I.e. has been invoked on the other end) and it
+// will be given the response data from the request, it shoul be of the type:
 //
-// func(T, T, ...)
+//  func(T, T, ...)
 //
-// Where T are whatever types the other end of this Connection will respond with.
+// Where T are whatever data types the function on the other end will return
+// once invoked.
 func (c *Connection) Request(requestName interface{}, sequence ...interface{}) {
 	if c.Dead() {
 		return
@@ -107,12 +118,26 @@ func (c *Connection) Request(requestName interface{}, sequence ...interface{}) {
 		}
 	}
 
-	c.messageChan <- newRequestMessage(id, requestName, args)
+	go func() {
+		select {
+		case c.messageChan <- newRequestMessage(id, requestName, args):
+			// Sent message okay!
+			return
+
+		case <-c.DeathNotify():
+			// Connection closed; can't send.
+			return
+		}
+	}()
 }
 
 // String returns an string representation of this Connection.
+//
+// For security reasons the string will not contain the stores data, and will
+// instead only contain the length of the store (I.e. how many objects it
+// contains).
 func (c *Connection) String() string {
-	return fmt.Sprintf("Connection(%s, %s, Dead=%t, Method=%s)", c.Address(), c.Store.String(), c.Dead(), c.Method().String())
+	return fmt.Sprintf("Connection(%s, Store.Len()=%v, Dead=%t, Method=%s)", c.Address(), c.Store.Len(), c.Dead(), c.Method().String())
 }
 
 // Address returns the client address of this connection, usually for logging purposes.
@@ -123,14 +148,14 @@ func (c *Connection) Address() string {
 	return c.address
 }
 
-// Method returns one of the predefined constant organics.ConnectionMethod's
-// which represent the method this connection is based upon.
+// Method returns one of the predefined constant methods which represents the
+// method in use by this connection.
 func (c *Connection) Method() Method {
 	// Note: no locking needed, never written to past creation time.
 	return c.method
 }
 
-// Session returns the Session that is associated with this Connection.
+// Session returns the session object that is associated with this connection.
 func (c *Connection) Session() *Session {
 	// Note: no locking needed, never written to past createion time.
 	return c.session
@@ -144,18 +169,24 @@ func (c *Connection) Dead() bool {
 	return c.dead
 }
 
-// Kill will kill this connection as soon as possible, this function will block until the
-// connection is dead.
+// Kill kills this connection as soon as possible, this function will block
+// until the connection is dead.
 //
 // If this connection is already dead, this function is no-op.
 func (c *Connection) Kill() {
 	if !c.Dead() {
+		// Signal death
 		c.deathWantedNotify <- true
+
+		// Wait for completion
+		<-c.deathCompletedNotify
 	}
 }
 
-// DeathNotify returns an new channel on which true will be sent once Connection.Kill() has been
-// called.
+// DeathNotify returns an new channel on which true will be sent once this
+// connection is killed.
+//
+// An connection is considered killed once it's Kill() method has been called.
 //
 // If this connection is dead, then this function returns nil.
 func (c *Connection) DeathNotify() chan bool {
@@ -167,7 +198,7 @@ func (c *Connection) DeathNotify() chan bool {
 	defer c.access.Unlock()
 
 	ch := make(chan bool, 1)
-	c.onDeathNotifications = append(c.onDeathNotifications, ch)
+	c.deathNotifications = append(c.deathNotifications, ch)
 	return ch
 }
 
@@ -177,11 +208,11 @@ func (c *Connection) waitForDeath() {
 	c.access.Lock()
 	c.dead = true
 
-	deathNotifications := make([]chan bool, len(c.onDeathNotifications))
-	for i, ch := range c.onDeathNotifications {
+	deathNotifications := make([]chan bool, len(c.deathNotifications))
+	for i, ch := range c.deathNotifications {
 		deathNotifications[i] = ch
 	}
-	c.onDeathNotifications = make([]chan bool, 0)
+	c.deathNotifications = make([]chan bool, 0)
 	c.access.Unlock()
 
 	for _, ch := range deathNotifications {
@@ -189,10 +220,8 @@ func (c *Connection) waitForDeath() {
 		close(ch)
 	}
 
+	logger().Println("DeathNotify():", c)
 	c.Session().removeConnection(c.key)
-
-	logger.Println("DeathNotify():", c)
-
 	c.deathCompletedNotify <- true
 }
 
@@ -221,7 +250,7 @@ func (c *Connection) disconnectTimer(timeout, rate time.Duration) {
 						return
 
 					case <-time.After(timeout):
-						logger.Println("Ping timeout", c)
+						logger().Println("Ping timeout", c)
 						c.disconnectFromTimeout <- true
 
 					case <-c.disconnectTimerReset:
@@ -239,11 +268,11 @@ func (c *Connection) resetDisconnectTimer() {
 
 func newConnection(address string, session *Session, key interface{}, method Method) *Connection {
 	c := new(Connection)
+	c.Store = NewStore()
 	c.key = key // Used for removal from session via removeConnection()
 	c.deathNotify = make(chan bool)
 	c.deathWantedNotify = make(chan bool)
 	c.deathCompletedNotify = make(chan bool)
-	c.Store = NewStore()
 	c.messageChan = make(chan *message)
 	c.requestCompleters = make(map[float64]interface{})
 	c.session = session
@@ -254,5 +283,7 @@ func newConnection(address string, session *Session, key interface{}, method Met
 	c.disconnectTimerReset = make(chan bool, 1)
 	c.performPing = make(chan bool, 1)
 	go c.waitForDeath()
+
+	session.addConnection(key, c)
 	return c
 }

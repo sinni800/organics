@@ -7,6 +7,7 @@ package filesystem
 
 import (
 	"code.google.com/p/organics"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/url"
@@ -33,12 +34,31 @@ func sessionKeyToPath(key string) string {
 }
 
 type provider struct {
-	sessions         map[string]*organics.Session
+	access           sync.RWMutex
+	stores           map[string]*organics.Store
 	fileWritingLocks map[string]*sync.Mutex
 	directory        string
 }
 
+func (p *provider) setStore(key string, store *organics.Store) {
+	p.access.Lock()
+	defer p.access.Unlock()
+
+	p.stores[key] = store
+}
+
+func (p *provider) store(key string) (store *organics.Store, ok bool) {
+	p.access.RLock()
+	defer p.access.RUnlock()
+
+	store, ok = p.stores[key]
+	return
+}
+
 func (p *provider) getWriteLock(key string) *sync.Mutex {
+	p.access.Lock()
+	defer p.access.Unlock()
+
 	lock, ok := p.fileWritingLocks[key]
 	if !ok {
 		lock = new(sync.Mutex)
@@ -47,7 +67,9 @@ func (p *provider) getWriteLock(key string) *sync.Mutex {
 	return lock
 }
 
-func (p *provider) saveSession(key string, s *organics.Session) {
+func (p *provider) Save(key string, whatChanged interface{}, s *organics.Store) error {
+	p.setStore(key, s)
+
 	lock := p.getWriteLock(key)
 	lock.Lock()
 	defer lock.Unlock()
@@ -62,41 +84,31 @@ func (p *provider) saveSession(key string, s *organics.Session) {
 
 			err = os.MkdirAll(dirPath, os.ModeDir)
 			if err != nil {
-				log.Println("Error saving session", err)
-				return
+				return fmt.Errorf("Error saving session %v", err)
 			}
 		} else {
-			log.Println("Error saving session", err)
-			return
+			return fmt.Errorf("Error saving session %v", err)
 		}
 	}
 
 	data, err := s.GobEncode()
 	if err != nil {
-		log.Println("Error saving session", err)
-		return
+		return fmt.Errorf("Error saving session %v", err)
 	}
 
 	err = ioutil.WriteFile(keyPath, data, 0666)
 	if err != nil {
-		log.Println("Error saving session", err)
-		return
+		return fmt.Errorf("Error saving session %v", err)
 	}
-}
-
-func (p *provider) Store(key string, s *organics.Session) error {
-	p.sessions[key] = s
-
-	go p.saveSession(key, s)
 
 	return nil
 }
 
-func (p *provider) Get(key string) *organics.Session {
-	session, ok := p.sessions[key]
+func (p *provider) Load(key string) *organics.Store {
+	store, ok := p.store(key)
 	if ok {
 		// We have it in memory already
-		return session
+		return store
 	}
 
 	// We don't have it in memory, so load it from file.
@@ -112,7 +124,7 @@ func (p *provider) Get(key string) *organics.Session {
 		}
 	}
 
-	session = organics.NewSession()
+	store = organics.NewStore()
 
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
@@ -120,18 +132,18 @@ func (p *provider) Get(key string) *organics.Session {
 		return nil
 	}
 
-	err = session.GobDecode(data)
+	err = store.GobDecode(data)
 	if err != nil {
 		log.Println("Error decoding session file", err)
 		return nil
 	}
-	p.sessions[key] = session
-	return session
+	p.stores[key] = store
+	return store
 }
 
 func Provider(directory string) (organics.SessionProvider, error) {
 	p := new(provider)
-	p.sessions = make(map[string]*organics.Session)
+	p.stores = make(map[string]*organics.Store)
 	p.fileWritingLocks = make(map[string]*sync.Mutex)
 	p.directory = directory
 

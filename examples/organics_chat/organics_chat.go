@@ -14,10 +14,11 @@ import (
 	// Or use this line for sessions being saved on-file:
 	//"code.google.com/p/organics/provider/filesystem"
 
+	"html"
 	"log"
 	"net/http"
+	"os"
 	"sync"
-	//"os"
 )
 
 var (
@@ -28,7 +29,7 @@ var (
 
 func init() {
 	// Not needed unless trying to debug things:
-	//organics.SetDebugOutput(os.Stdout)
+	organics.SetDebugOutput(os.Stdout)
 }
 
 func sendMessageToAll(msg string) {
@@ -63,11 +64,23 @@ func doConnect(connection *organics.Connection) {
 }
 
 func doMessage(msg string, connection *organics.Connection) {
+	msg = html.EscapeString(msg)
+
 	username := connection.Get("username", "").(string)
+
+	if username == "admin" {
+		log.Println(msg)
+		for _, conn := range server.Connections() {
+			conn.Request("DisplayMessage", "("+username+"): "+msg)
+		}
+		return
+	}
 	sendMessageToAll("(" + username + "): " + msg)
 }
 
 func doSetUsername(username string, connection *organics.Connection) {
+	username = html.EscapeString(username)
+
 	connection.Set("username", username)
 	sendMessageToAll(username + " is now online.")
 }
@@ -107,12 +120,7 @@ func main() {
 	server.Handle("SetUsername", doSetUsername)
 	server.Handle("Message", doMessage)
 
-	// If you want to change the folder where Organics will place the session files, use this:
-	//     Note: Only applies to provider/filesystem
-	//
-	// organics.InstallProvider(filesystem.NewProvider("organics_sessions"))
-
-	http.Handle("/", http.FileServer(http.Dir("src/code.google.com/p/organics/examples/chat/client")))
+	http.Handle("/", http.FileServer(http.Dir("src/code.google.com/p/organics/examples/organics_chat/client")))
 	http.Handle("/javascript/", http.FileServer(http.Dir("src/code.google.com/p/organics/")))
 
 	http.Handle("/app", server)

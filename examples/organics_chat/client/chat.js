@@ -64,7 +64,7 @@ window.onload = function() {
 
 var DisplayMessage = function(msg) {
 	var e = document.getElementById("messages");
-	e.innerHTML = e.innerHTML + msg + "\r\n";
+	e.innerHTML = e.innerHTML + msg + "<br/>";
 	e.scrollTop = e.scrollHeight;
 	if(!window.isFocused) {
 		popSound.play();

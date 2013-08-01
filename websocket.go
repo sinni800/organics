@@ -7,9 +7,11 @@ package organics
 import (
 	"bytes"
 	"code.google.com/p/go.net/websocket"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"reflect"
 	"runtime/debug"
 )
@@ -55,7 +57,7 @@ func (s *Server) webSocketWrite(ws *websocket.Conn, connection *Connection) {
 		case <-connection.performPing:
 			err := sendMessage(ws, "")
 			if err != nil {
-				logger.Println("Error writing", err, connection)
+				logger().Println("Error writing", err, connection)
 				connection.Kill()
 				return
 			}
@@ -63,13 +65,13 @@ func (s *Server) webSocketWrite(ws *websocket.Conn, connection *Connection) {
 		case msg := <-connection.messageChan:
 			encoded, err := msg.jsonEncode()
 			if err != nil {
-				logger.Println(err)
+				logger().Println(err)
 				connection.Kill()
 				return
 			}
 			err = sendMessage(ws, string(encoded))
 			if err != nil {
-				logger.Println("Error writing", err, connection)
+				logger().Println("Error writing", err, connection)
 				connection.Kill()
 				return
 			}
@@ -89,7 +91,7 @@ func (s *Server) webSocketHandleMessage(msg string, ws *websocket.Conn, connecti
 	decoded := new(message)
 	err := decoded.jsonDecode([]byte(msg))
 	if err != nil {
-		logger.Println(err)
+		logger().Println(err)
 		connection.Kill()
 		return
 	}
@@ -99,7 +101,7 @@ func (s *Server) webSocketHandleMessage(msg string, ws *websocket.Conn, connecti
 		onComplete, ok := connection.requestCompleters[decoded.id]
 		if !ok {
 			// Should never happen.
-			logger.Println("Invalid request response, id not valid, ignoring.")
+			logger().Println("Invalid request response, id not valid, ignoring.")
 			return
 		}
 
@@ -140,7 +142,7 @@ func (s *Server) webSocketHandleMessage(msg string, ws *websocket.Conn, connecti
 		// It's an request, so grab the request handler, and try to invoke it.
 		handler := s.getHandler(decoded.requestName)
 		if handler == nil {
-			logger.Printf("No handler for message \"%s\"\n", decoded.requestName)
+			logger().Printf("No handler for message \"%s\"\n", decoded.requestName)
 			return
 		}
 		fn := reflect.ValueOf(handler)
@@ -215,18 +217,18 @@ func (s *Server) webSocketWaitForDeath(ws *websocket.Conn, connection *Connectio
 	ws.Close()
 }
 
-func (s *Server) webSocketHandle(ws *websocket.Conn) {
+func (s *Server) handleWebSocket(ws *websocket.Conn) {
 	origin := ws.Request().Header["Origin"]
 	if len(origin) == 0 {
-		logger.Println("WebSocket origin header not present, dropping.")
+		logger().Println("WebSocket connection without origin header, dropped.")
 		ws.Close()
 		return
 	}
 
 	if !s.OriginAccess(origin[0]) {
-		logger.Println("WebSocket from non-allowed origin, dropping.")
+		logger().Println("WebSocket connection from non-allowed origin, dropped.")
 		if len(origin) <= 256 {
-			logger.Println("^", origin[0])
+			logger().Printf("^ %q\n", origin[0])
 		}
 		ws.Close()
 		return
@@ -238,18 +240,10 @@ func (s *Server) webSocketHandle(ws *websocket.Conn) {
 		panic("No session provider is installed on the server")
 	}
 
-	sessionCookie, err := ws.Request().Cookie("organics-session")
-	if err != nil {
-		// They should always provide this cookie, without an doubt.
-		logger.Println("WebSocket request did not include organics-session cookie, dropping.")
-		ws.Close()
-		return
-	}
-
-	session := sp.Get(sessionCookie.Value)
+	session := s.getSession(ws.Request())
 	if session == nil {
-		// They never sent the initial rtWebSocketCreateSession request. (See longpoll.go for info)
-		logger.Println("WebSocket request who never sent establish connection POST request, dropping.")
+		// They don't have an session known to us, drop them.
+		logger().Println("WebSocket with an invalid session, dropping.")
 		ws.Close()
 		return
 	}
@@ -259,7 +253,6 @@ func (s *Server) webSocketHandle(ws *websocket.Conn) {
 	// In this case, we'll use the actualy websocket connection as the key, since WebSocket is an
 	// connection-based protocol.
 	connection := newConnection(ws.Request().RemoteAddr, session, ws, WebSocket)
-	session.addConnection(ws, connection)
 
 	go s.webSocketWrite(ws, connection)
 	go s.webSocketWaitForDeath(ws, connection)
@@ -271,7 +264,7 @@ func (s *Server) webSocketHandle(ws *websocket.Conn) {
 		msg, err := receiveMessage(ws, s.MaxBufferSize())
 		if err != nil {
 			if err != io.EOF {
-				logger.Println("receiveMessage() failed:", err)
+				logger().Println("receiveMessage() failed:", err)
 			}
 			connection.Kill()
 			break
@@ -279,15 +272,51 @@ func (s *Server) webSocketHandle(ws *websocket.Conn) {
 
 		defer func() {
 			if e := recover(); e != nil {
-				debugLogger.Println(fmt.Sprint(e))
+				logger().Println(fmt.Sprint(e))
 			}
 		}()
 		s.webSocketHandleMessage(msg, ws, connection)
 	}
 }
 
-func (s *Server) makeWebSocketHandler() func(ws *websocket.Conn) {
-	return func(ws *websocket.Conn) {
-		s.webSocketHandle(ws)
+func (s *Server) handleWebSocketHandshake(config *websocket.Config, req *http.Request) error {
+	var err error
+
+	var origin string
+	switch config.Version {
+	case websocket.ProtocolVersionHybi13:
+		origin = req.Header.Get("Origin")
+	case websocket.ProtocolVersionHybi08:
+		origin = req.Header.Get("Sec-Websocket-Origin")
+	}
+
+	if !s.OriginAccess(origin) {
+		err = fmt.Errorf("WebSocket connection from disallowed origin %q, dropped.")
+		logger().Println(err)
+		return err
+	}
+
+	_, ok := s.ensureSessionExists(req, func(cookie *http.Cookie) {
+		// Set cookie
+		config.Header = make(http.Header)
+		config.Header.Set("Set-Cookie", cookie.String())
+
+		// Set Cookie header so that handleWebSocket above can see the updated
+		// cookie.
+		req.Header.Set("Cookie", cookie.String())
+	})
+	if !ok {
+		err = errors.New(http.StatusText(http.StatusInternalServerError))
+		logger().Println(err)
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) makeWebSocketServer() *websocket.Server {
+	return &websocket.Server{
+		Handler:   s.handleWebSocket,
+		Handshake: s.handleWebSocketHandshake,
 	}
 }

@@ -4,7 +4,7 @@
 
 // Enable console debug messages
 //
-//Organics.Debug = true;
+Organics.Debug = true;
 //
 // Disable WebSocket support -- forcing long-polling method (GET/POST)
 // Note: This is really only for debugging.

@@ -17,10 +17,12 @@
 
 			#messages {
 				display: block;
-				width: 100%;
+				width: auto;
 				height: 95%;
 				margin: 0;
 				padding: .16em;
+				font-size: 16px;
+				overflow-y: scroll;
 			}
 
 			#chat_input {
@@ -32,7 +34,7 @@
 		</style>
 	</head>
 	<body>
-		<textarea id="messages" readonly></textarea>
+		<div id="messages"></div>
 		<input type="text" id="chat_input">
 	</body>
 </html>

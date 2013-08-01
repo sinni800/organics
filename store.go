@@ -16,12 +16,14 @@ const (
 	storeVersion uint8 = 1
 )
 
-// Store is an atomic data storage, which is used both by organics.Connection and organics.Session
-// to provide session and connection based storage facilities.
+// Store is an atomic data storage, which is used both by the Connection struct
+// and Session struct to provide session and connection based storage
+// facilities.
 type Store struct {
-	access            sync.RWMutex
-	data              map[interface{}]interface{}
+	access              sync.RWMutex
+	data                map[interface{}]interface{}
 	dataChangeNotifiers []chan bool
+	dataWatchers        map[chan interface{}]bool
 }
 
 func (s *Store) sendDataChanged() {
@@ -30,6 +32,57 @@ func (s *Store) sendDataChanged() {
 		close(ch)
 	}
 	s.dataChangeNotifiers = make([]chan bool, 0)
+}
+
+func (s *Store) doKeyChanged(key interface{}) {
+	for ch, active := range s.dataWatchers {
+		if active {
+			if len(ch) == cap(ch) {
+				// Max buffered elements hit, spawn goroutines starting now.
+				go func() {
+					ch <- key
+				}()
+			} else {
+				ch <- key
+			}
+		}
+	}
+}
+
+// RemoveWatcher removes the specified data watcher; it must be an channel that
+// was returned from the ChangeWatcher() method.
+//
+// See ChangeWatcher() for more information.
+func (s *Store) RemoveWatcher(ch chan interface{}) {
+	s.access.Lock()
+	defer s.access.Unlock()
+
+	// Mark inactive
+	s.dataWatchers[ch] = false
+
+	// Close channel, empty the channel buffer.
+	close(ch)
+	for len(ch) >= 1 {
+		<-ch
+	}
+
+	// Remove watcher channel.
+	delete(s.dataWatchers, ch)
+}
+
+// ChangeWatcher returns an channel over which the keys of data inside this
+// store will be sent as they are added, removed, or changed.
+//
+// In order for the caller to not miss any data changes in this store, the
+// channel will continue to have change events sent over it until an call to
+// the RemoveWatcher() method.
+func (s *Store) ChangeWatcher() chan interface{} {
+	s.access.Lock()
+	defer s.access.Unlock()
+
+	ch := make(chan interface{}, 10)
+	s.dataWatchers[ch] = true
+	return ch
 }
 
 // ChangeNotify returns an channel over which true will be sent once the data
@@ -43,7 +96,7 @@ func (s *Store) ChangeNotify() chan bool {
 	defer s.access.Unlock()
 
 	ch := make(chan bool, 1)
-	s.dataChangeNotifiers = append(s.dataChangeNotifiers, ch)	
+	s.dataChangeNotifiers = append(s.dataChangeNotifiers, ch)
 	return ch
 }
 
@@ -59,7 +112,48 @@ func (s *Store) Data() map[interface{}]interface{} {
 	return cpy
 }
 
-// Implements encoding/gob.GobEncoder interface
+// Keys returns an copy of this store's underlying data map's keys.
+func (s *Store) Keys() []interface{} {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
+	cpy := make([]interface{}, len(s.data))
+	i := 0
+	for key, _ := range s.data {
+		cpy[i] = key
+		i++
+	}
+	return cpy
+}
+
+// Values returns an copy of this store's underlying data map's values.
+func (s *Store) Values() []interface{} {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
+	cpy := make([]interface{}, len(s.data))
+	i := 0
+	for _, value := range s.data {
+		cpy[i] = value
+		i++
+	}
+	return cpy
+}
+
+// Len is short hand for the following, but doesn't have to create an copy of
+// the data map as it cannot be modified by the caller:
+//
+//  return len(s.Data())
+//
+func (s *Store) Len() int {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
+	return len(s.data)
+}
+
+// Implements the gob encoding interface (see the encoding/gob package for more
+// information)
 func (s *Store) GobEncode() ([]byte, error) {
 	s.access.RLock()
 	defer s.access.RUnlock()
@@ -80,7 +174,8 @@ func (s *Store) GobEncode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Implements encoding/gob.GobDecoder interface
+// Implements the gob decoding interface (see the encoding/gob package for more
+// information).
 func (s *Store) GobDecode(data []byte) error {
 	s.access.Lock()
 	defer s.access.Unlock()
@@ -99,10 +194,18 @@ func (s *Store) GobDecode(data []byte) error {
 		return err
 	}
 
+	for key, _ := range s.data {
+		s.doKeyChanged(key)
+	}
+
 	return nil
 }
 
 // String returns an string representation of this Store
+//
+// Note that this prints all data inside this store -- as such if the store may
+// contain sensitive data (I.e. passwords, credit card numbers, etc) then you
+// might want to never print the store for security reasons.
 func (s *Store) String() string {
 	s.access.RLock()
 	defer s.access.RUnlock()
@@ -133,10 +236,12 @@ func (s *Store) Set(key, value interface{}) {
 
 	s.data[key] = value
 	s.sendDataChanged()
+	s.doKeyChanged(key)
 }
 
-// Get returns the specified key from this Store's data, or if this Store does not have the
-// specified key, then the key is set to the default value, and the default value is returned.
+// Get returns the specified key from this stores data, or if this store does
+// not have the specified key then the key is set to the default value and the
+// default value is returned.
 func (s *Store) Get(key, defaultValue interface{}) interface{} {
 	s.access.RLock()
 
@@ -145,10 +250,11 @@ func (s *Store) Get(key, defaultValue interface{}) interface{} {
 		s.access.RUnlock()
 
 		s.access.Lock()
-		s.access.Unlock()
+		defer s.access.Unlock()
 
 		s.data[key] = defaultValue
 		s.sendDataChanged()
+		s.doKeyChanged(key)
 		return defaultValue
 	}
 
@@ -156,23 +262,43 @@ func (s *Store) Get(key, defaultValue interface{}) interface{} {
 	return value
 }
 
-// Delete deletes the specified key from this Store's data, if there is no such key, this function
-// is no-op.
+// Delete deletes the specified key from this stores data, if there is no such
+// key then this function is no-op.
 func (s *Store) Delete(key interface{}) {
 	s.access.Lock()
 	defer s.access.Unlock()
 
 	delete(s.data, key)
 	s.sendDataChanged()
+	s.doKeyChanged(key)
 }
 
-// Reset resets this Store such that there is absolutely no data inside of it.
+// Reset resets this store such that there is absolutely no data inside of it.
 func (s *Store) Reset() {
 	s.access.Lock()
 	defer s.access.Unlock()
 
+	for key, _ := range s.data {
+		delete(s.data, key)
+		s.sendDataChanged()
+		s.doKeyChanged(key)
+	}
+
 	s.data = make(map[interface{}]interface{})
-	s.sendDataChanged()
+}
+
+// Copy returns an new 1:1 copy of this store and it's data.
+//
+// The copy does not include data change notifiers returned by ChangeNotify().
+func (s *Store) Copy() *Store {
+	s.access.RLock()
+	defer s.access.RUnlock()
+
+	cpy := NewStore()
+	for key, value := range s.data {
+		cpy.data[key] = value
+	}
+	return cpy
 }
 
 // NewStore returns an new intialized *Store.
@@ -180,6 +306,6 @@ func NewStore() *Store {
 	s := new(Store)
 	s.data = make(map[interface{}]interface{})
 	s.dataChangeNotifiers = make([]chan bool, 0)
+	s.dataWatchers = make(map[chan interface{}]bool)
 	return s
 }
-

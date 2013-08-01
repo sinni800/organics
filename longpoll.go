@@ -82,7 +82,7 @@ func (s *Server) lpHandleLongPoll(w http.ResponseWriter, req *http.Request, sess
 		//
 		encoded, err := msg.jsonEncode()
 		if err != nil {
-			logger.Println(err)
+			logger().Println(err)
 			connection.Kill()
 			w.WriteHeader(http.StatusBadRequest)
 			req.Close = true
@@ -144,7 +144,7 @@ func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, sessi
 	decoded := new(message)
 	err = decoded.jsonDecode(data)
 	if err != nil {
-		logger.Println(err)
+		logger().Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
@@ -155,7 +155,7 @@ func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, sessi
 		onComplete, ok := connection.requestCompleters[decoded.id]
 		if !ok {
 			// Should never happen.
-			logger.Println("Invalid request response, id not valid, ignoring.")
+			logger().Println("Invalid request response, id not valid, ignoring.")
 			return
 		}
 
@@ -187,7 +187,7 @@ func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, sessi
 				fmt.Fprintf(buf, "%s\n\n", fn.Type().String())
 				fmt.Fprintf(buf, "%s\n\n", msg)
 				fmt.Fprintf(buf, "%s", string(debug.Stack()))
-				debugLogger.Println(string(buf.Bytes()))
+				logger().Println(string(buf.Bytes()))
 			}
 		}()
 		fn.Call(valueArgs)
@@ -196,7 +196,7 @@ func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, sessi
 		// It's an request, so grab the request handler, and try to invoke it.
 		handler := s.getHandler(decoded.requestName)
 		if handler == nil {
-			logger.Printf("No handler for message \"%s\"\n", decoded.requestName)
+			logger().Printf("No handler for message \"%s\"\n", decoded.requestName)
 			return
 		}
 		fn := reflect.ValueOf(handler)
@@ -229,7 +229,7 @@ func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, sessi
 				fmt.Fprintf(buf, "%s\n\n", fn.Type().String())
 				fmt.Fprintf(buf, "%s\n\n", msg)
 				fmt.Fprintf(buf, "%s", string(debug.Stack()))
-				debugLogger.Println(string(buf.Bytes()))
+				logger().Println(string(buf.Bytes()))
 			}
 		}()
 		responseValues := fn.Call(valueArgs)
@@ -293,7 +293,7 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	organicsReqH, ok := req.Header["X-Organics-Req"]
 	if !ok || len(organicsReqH) != 1 {
 		// They didn't provide the header, so they're in the wrong.
-		logger.Println("bad request | X-Organics-Req header not present")
+		logger().Println("bad request | X-Organics-Req header not present")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
@@ -301,10 +301,10 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 
 	// Check to see if they specified an invalid request type in the X-Organics-Req header, and if
 	// they did, inform them of an bad request.
-	organicsReq := organicsReqH[0]
-	if !validRequestType(organicsReq) {
+	organicsReq := requestType(organicsReqH[0])
+	if !organicsReq.valid() {
 		// They gave us an wrong header value, it is bad.
-		logger.Println("bad request | X-Organics-Req header invalid value")
+		logger().Println("bad request | X-Organics-Req header invalid value")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
@@ -328,52 +328,44 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	// 3) (LongPoll) Client makes request, when it wants, sending rtMessage, server handles message
 	//    and responds via previous (or future) rtLongPoll request.
 
-	if organicsReq == rtWebSocketEstablishConnection || organicsReq == rtLongPollEstablishConnection {
-		session, ok := s.ensureSessionExists(w, req)
+	if organicsReq == rtLongPollEstablishConnection {
+		session, ok := s.ensureSessionExists(req, func(cookie *http.Cookie) {
+			http.SetCookie(w, cookie)
+		})
 		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		// If this is an Long Polling establish connection request, the client needs to know what
-		// connection object they are. We send their connection id as an string, and they send it
-		// back through the X-Organics-Conn header.
-		if organicsReq == rtLongPollEstablishConnection {
-
-			// Double bonus: instead of senting an additional CSRF token, we make the connection
-			// id the CSRF token.
-			connectionId, err := s.generateSessionKey()
-			if err != nil {
-				// This should really never happen
-				logger.Println("Failed to generate connection key identifier:", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				req.Close = true
-				return
-			}
-
-			// Create their new connection, using connectionId as the key
-			connection := newConnection(req.RemoteAddr, session, connectionId, LongPolling)
-
-			// Add their connection object, so we can find it later.
-			session.addConnection(connectionId, connection)
-
-			// Send it to them
-			w.Write([]byte(connectionId))
-
-			// We make an timer that will determine if they have been disconnected due to their connection
-			// not responding.
-			connection.disconnectTimer(s.PingTimeout(), s.PingRate())
-			connection.lpWaitForDeath()
-
-			// Notify the server's Handler functions that this connection has connected.
-			s.doConnectHandler(connection)
+		// This is an Long Polling establish connection request, the client
+		// needs to know what connection object they are. We send their
+		// connection id as an string, and they send it back through the
+		// X-Organics-Conn header.
+		//
+		// Double bonus: instead of senting an additional CSRF token, we make
+		// the connection id the CSRF token.
+		connectionId, err := s.generateSessionKey()
+		if err != nil {
+			// This should really never happen
+			logger().Println("Failed to generate connection key identifier:", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			req.Close = true
 			return
 		}
 
-		// Note: WebSocket's will add their connection to the session later, since WebSocket is an
-		// connection-based protocol.
+		// Create their new connection, using connectionId as the key
+		connection := newConnection(req.RemoteAddr, session, connectionId, LongPolling)
 
-		// Lastly, at this point, this is all they wanted.
-		w.WriteHeader(http.StatusOK)
+		// Send it to them
+		w.Write([]byte(connectionId))
+
+		// We make an timer that will determine if they have been disconnected due to their connection
+		// not responding.
+		connection.disconnectTimer(s.PingTimeout(), s.PingRate())
+		connection.lpWaitForDeath()
+
+		// Notify the server's Handler functions that this connection has connected.
+		s.doConnectHandler(connection)
 		return
 	}
 
@@ -381,19 +373,19 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	// an connection and session object, from an previous rtLongPollEstablishConnection.
 
 	// We'll need to retrieve their session
-	session := s.getSession(w, req)
+	session := s.getSession(req)
 	if session == nil {
 		// For some reason, they have no session object. Either they got here *magically* by an
 		// mistake, or their Organics client is totally messed up.
 		//
 		// Either way, they're in the wrong here.
-		logger.Println("Long Polling request never sent establish connection message, ignored.")
+		logger().Println("Long Polling request never sent establish connection message, ignored.")
 		req.Close = true
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	if session.Dead() {
-		logger.Println("bad request | request for dead session attempted")
+		logger().Println("bad request | request for dead session attempted")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
@@ -404,7 +396,7 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	organicsConnH, ok := req.Header["X-Organics-Conn"]
 	if !ok || len(organicsConnH) != 1 {
 		// They didn't provide the header, so they're in the wrong.
-		logger.Println("bad request | X-Organics-Conn header not present")
+		logger().Println("bad request | X-Organics-Conn header not present")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
@@ -415,13 +407,13 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	connection := session.getConnection(organicsConn)
 	if connection == nil {
 		// Seems we did not find it, so they're in the wrong.
-		logger.Println("bad request | X-Organics-Conn value invalid")
+		logger().Println("bad request | X-Organics-Conn value invalid")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
 	}
 	if connection.Dead() {
-		logger.Println("bad request | request for dead X-Organics-Conn attempted")
+		logger().Println("bad request | request for dead X-Organics-Conn attempted")
 		w.WriteHeader(http.StatusBadRequest)
 		req.Close = true
 		return
