@@ -908,34 +908,43 @@ var Organics = new function() {
 		self.__logMessage("-> Connect()");
 		self.__connecting = true;
 
-
-		if(Organics.WebSocketSupported) {
-			self.__connectWebSocket()
-			return
-		}
-
-		// Perform the create session request
-		Organics.__ajax(self.__HTTP_URL, "POST", {
-			complete: function(xhr) {
-				self.__connectionId = xhr.responseText;
-				self.__logMessage("-> Create session request successful: connected to server");
-				self.__connected = true;
-				self.__connecting = false;
-				setTimeout(function() {
-					self.__doLongPolling();
-				}, 0);
-				self.__handleConnect();
-			},
-			error: function(xhr, msg) {
-				// Handle the disconnection error, use an delay of 0.25 seconds to ensure that
-				// an error handler is assigned before the error is dispatched
-				self.__handleDisconnect("Create session request failed (" + msg + ")");
+		var doConnect = function() {
+			if(Organics.WebSocketSupported) {
+				self.__connectWebSocket()
+				return
 			}
-		}, null, self.Timeout, {
-			// This informs the server this is an session creation request, and they it should
-			// respond immedietly after ensuring we have an request.
-			"X-Organics-Req": Organics.__rtLongPollEstablishConnection
-		});
+
+			// Perform the create session request
+			Organics.__ajax(self.__HTTP_URL, "POST", {
+				complete: function(xhr) {
+					self.__connectionId = xhr.responseText;
+					self.__logMessage("-> Create session request successful: connected to server");
+					self.__connected = true;
+					self.__connecting = false;
+					setTimeout(function() {
+						self.__doLongPolling();
+					}, 0);
+					self.__handleConnect();
+				},
+				error: function(xhr, msg) {
+					// Handle the disconnection error, use an delay of 0.25 seconds to ensure that
+					// an error handler is assigned before the error is dispatched
+					self.__handleDisconnect("Create session request failed (" + msg + ")");
+				}
+			}, null, self.Timeout, {
+				// This informs the server this is an session creation request, and they it should
+				// respond immedietly after ensuring we have an request.
+				"X-Organics-Req": Organics.__rtLongPollEstablishConnection
+			});
+		};
+
+
+		if(!Organics.__hasAlreadyLoaded) {
+			Organics.__addEventListener(window, "load", doConnect);
+			Organics.__hasAlreadyLoaded = true;
+		} else {
+			doConnect();
+		}
 	}
 
 	this.Connection.prototype.__handleMessage = function(msg) {
