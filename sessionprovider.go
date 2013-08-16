@@ -19,7 +19,7 @@ type SessionProvider interface {
 	//
 	// The channel returned should have either nil or an valid error sent over
 	// it to respectively signal completion, or an error saving.
-	Save(sessionKey string, whatChanged interface{}, s *Store) error
+	Save(sessionKey string, whatChanged string, s *Store) error
 
 	// Load should return an previously saved store object given the unique key
 	// it was saved with.

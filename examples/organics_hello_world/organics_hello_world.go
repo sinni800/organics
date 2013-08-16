@@ -14,6 +14,10 @@ import (
 	// Or use this line for sessions being saved on-file:
 	//"code.google.com/p/organics/provider/filesystem"
 
+	// Or use these lines for sessions being saved in an mongo database:
+	//"code.google.com/p/organics/provider/mongo"
+	//"labix.org/v2/mgo"
+
 	"log"
 	"net/http"
 	"os"
@@ -127,7 +131,17 @@ func main() {
 	//  }
 	//
 	// (where 'organics_sessions' is the folder to store sessions).
-
+	//
+	// For the mongo database session provider:
+	//
+	//  mgoSession, err := mgo.Dial("localhost")
+	//  if err != nil {
+	//      log.Fatal(err)
+	//  }
+	//  defer mgoSession.Close()
+	//
+	//  sessionProvider := mongo.Provider(mgoSession.DB("organics").C("sessions"))
+	//
 	// We use the in-memory session provider:
 	sessionProvider := memory.Provider()
 

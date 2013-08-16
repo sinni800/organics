@@ -67,7 +67,7 @@ func (p *provider) getWriteLock(key string) *sync.Mutex {
 	return lock
 }
 
-func (p *provider) Save(key string, whatChanged interface{}, s *organics.Store) error {
+func (p *provider) Save(key string, whatChanged string, s *organics.Store) error {
 	p.setStore(key, s)
 
 	lock := p.getWriteLock(key)

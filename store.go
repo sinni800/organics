@@ -21,9 +21,9 @@ const (
 // facilities.
 type Store struct {
 	access              sync.RWMutex
-	data                map[interface{}]interface{}
+	data                map[string]interface{}
 	dataChangeNotifiers []chan bool
-	dataWatchers        map[chan interface{}]bool
+	dataWatchers        map[chan string]bool
 }
 
 func (s *Store) sendDataChanged() {
@@ -34,7 +34,7 @@ func (s *Store) sendDataChanged() {
 	s.dataChangeNotifiers = make([]chan bool, 0)
 }
 
-func (s *Store) doKeyChanged(key interface{}) {
+func (s *Store) doKeyChanged(key string) {
 	for ch, active := range s.dataWatchers {
 		if active {
 			if len(ch) == cap(ch) {
@@ -53,7 +53,7 @@ func (s *Store) doKeyChanged(key interface{}) {
 // was returned from the ChangeWatcher() method.
 //
 // See ChangeWatcher() for more information.
-func (s *Store) RemoveWatcher(ch chan interface{}) {
+func (s *Store) RemoveWatcher(ch chan string) {
 	s.access.Lock()
 	defer s.access.Unlock()
 
@@ -76,11 +76,11 @@ func (s *Store) RemoveWatcher(ch chan interface{}) {
 // In order for the caller to not miss any data changes in this store, the
 // channel will continue to have change events sent over it until an call to
 // the RemoveWatcher() method.
-func (s *Store) ChangeWatcher() chan interface{} {
+func (s *Store) ChangeWatcher() chan string {
 	s.access.Lock()
 	defer s.access.Unlock()
 
-	ch := make(chan interface{}, 10)
+	ch := make(chan string, 10)
 	s.dataWatchers[ch] = true
 	return ch
 }
@@ -101,11 +101,11 @@ func (s *Store) ChangeNotify() chan bool {
 }
 
 // Data returns an copy of this store's underlying data map.
-func (s *Store) Data() map[interface{}]interface{} {
+func (s *Store) Data() map[string]interface{} {
 	s.access.RLock()
 	defer s.access.RUnlock()
 
-	cpy := make(map[interface{}]interface{}, len(s.data))
+	cpy := make(map[string]interface{}, len(s.data))
 	for key, value := range s.data {
 		cpy[key] = value
 	}
@@ -113,11 +113,11 @@ func (s *Store) Data() map[interface{}]interface{} {
 }
 
 // Keys returns an copy of this store's underlying data map's keys.
-func (s *Store) Keys() []interface{} {
+func (s *Store) Keys() []string {
 	s.access.RLock()
 	defer s.access.RUnlock()
 
-	cpy := make([]interface{}, len(s.data))
+	cpy := make([]string, len(s.data))
 	i := 0
 	for key, _ := range s.data {
 		cpy[i] = key
@@ -221,7 +221,7 @@ func (s *Store) String() string {
 }
 
 // Has tells weather this Store has the specified key.
-func (s *Store) Has(key interface{}) bool {
+func (s *Store) Has(key string) bool {
 	s.access.RLock()
 	defer s.access.RUnlock()
 
@@ -230,7 +230,7 @@ func (s *Store) Has(key interface{}) bool {
 }
 
 // Set sets the specified key to the specified value
-func (s *Store) Set(key, value interface{}) {
+func (s *Store) Set(key string, value interface{}) {
 	s.access.Lock()
 	defer s.access.Unlock()
 
@@ -242,7 +242,7 @@ func (s *Store) Set(key, value interface{}) {
 // Get returns the specified key from this stores data, or if this store does
 // not have the specified key then the key is set to the default value and the
 // default value is returned.
-func (s *Store) Get(key, defaultValue interface{}) interface{} {
+func (s *Store) Get(key string, defaultValue interface{}) interface{} {
 	s.access.RLock()
 
 	value, ok := s.data[key]
@@ -264,7 +264,7 @@ func (s *Store) Get(key, defaultValue interface{}) interface{} {
 
 // Delete deletes the specified key from this stores data, if there is no such
 // key then this function is no-op.
-func (s *Store) Delete(key interface{}) {
+func (s *Store) Delete(key string) {
 	s.access.Lock()
 	defer s.access.Unlock()
 
@@ -284,7 +284,7 @@ func (s *Store) Reset() {
 		s.doKeyChanged(key)
 	}
 
-	s.data = make(map[interface{}]interface{})
+	s.data = make(map[string]interface{})
 }
 
 // Copy returns an new 1:1 copy of this store and it's data.
@@ -304,8 +304,8 @@ func (s *Store) Copy() *Store {
 // NewStore returns an new intialized *Store.
 func NewStore() *Store {
 	s := new(Store)
-	s.data = make(map[interface{}]interface{})
+	s.data = make(map[string]interface{})
 	s.dataChangeNotifiers = make([]chan bool, 0)
-	s.dataWatchers = make(map[chan interface{}]bool)
+	s.dataWatchers = make(map[chan string]bool)
 	return s
 }

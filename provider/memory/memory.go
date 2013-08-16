@@ -15,7 +15,7 @@ type provider struct {
 	sessions map[string]*organics.Store
 }
 
-func (p *provider) Save(key string, whatChanged interface{}, s *organics.Store) error {
+func (p *provider) Save(key string, whatChanged string, s *organics.Store) error {
 	p.access.Lock()
 	defer p.access.Unlock()
 
