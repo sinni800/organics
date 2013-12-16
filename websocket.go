@@ -286,8 +286,6 @@ func (s *Server) handleWebSocketHandshake(config *websocket.Config, req *http.Re
 	switch config.Version {
 	case websocket.ProtocolVersionHybi13:
 		origin = req.Header.Get("Origin")
-	case websocket.ProtocolVersionHybi08:
-		origin = req.Header.Get("Sec-Websocket-Origin")
 	}
 
 	if !s.OriginAccess(origin) {
