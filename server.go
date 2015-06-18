@@ -7,7 +7,7 @@ package organics
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/websocket"
+	"golang.org/x/net/websocket"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"

@@ -6,7 +6,7 @@ package organics
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/websocket"
+	"golang.org/x/net/websocket"
 	"errors"
 	"fmt"
 	"io"
