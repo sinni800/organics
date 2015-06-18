@@ -6,7 +6,7 @@
 package memory
 
 import (
-	"code.google.com/p/organics"
+	"github.com/sinni800/organics"
 	"sync"
 )
 

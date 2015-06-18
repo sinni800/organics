@@ -6,7 +6,7 @@
 package filesystem
 
 import (
-	"code.google.com/p/organics"
+	"github.com/sinni800/organics"
 	"fmt"
 	"io/ioutil"
 	"log"

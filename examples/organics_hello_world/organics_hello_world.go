@@ -6,13 +6,13 @@
 package main
 
 import (
-	"code.google.com/p/organics"
+	"github.com/sinni800/organics"
 
 	// For sessions being stored in-memory:
-	"code.google.com/p/organics/provider/memory"
+	"github.com/sinni800/organics/provider/memory"
 
 	// Or use this line for sessions being saved on-file:
-	//"code.google.com/p/organics/provider/filesystem"
+	//"github.com/sinni800/organics/provider/filesystem"
 
 	// Or use these lines for sessions being saved in an mongo database:
 	//"code.google.com/p/organics/provider/mongo"

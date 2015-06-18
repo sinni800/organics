@@ -6,7 +6,7 @@
 package mongo
 
 import (
-	"code.google.com/p/organics"
+	"github.com/sinni800/organics"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"log"
