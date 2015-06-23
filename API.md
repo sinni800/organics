@@ -4,4 +4,4 @@ Currently the Organics APIs consist of two portions, both of which are dire in o
   * [Go Server API](GoServerApi.md)
 
 ### Future ###
-In the future, an _Go client API_ may be provided (see [issue 1](https://code.google.com/p/organics/issues/detail?id=1)).
+In the future, an _Go client API_ may be provided (see [issue 1](https://github.com/sinni800/organics/issues/1)).
