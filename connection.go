@@ -43,10 +43,8 @@ func (m Method) String() string {
 // Connection represents an single connection to an web browser, this
 // connection will remain for as long as the user keeps the web page open
 // through their browser.
-type Connection struct {
-	*Store
-
-	key                                                      interface{}
+type connection struct {
+	
 	access                                                   sync.RWMutex
 	dead                                                     bool
 	deathNotify, deathCompletedNotify, deathWantedNotify     chan bool
@@ -60,6 +58,17 @@ type Connection struct {
 	messageChan       chan *message
 	requestCurrentId  float64
 	requestCompleters map[float64]interface{}
+}
+
+type ClientConnection struct {
+	*connection
+}
+
+type ServerConnection struct {
+	*Store
+	*connection
+	key                                                      interface{}
+	session                                                  *Session
 }
 
 // Request makes an request to the other end of this Connection.
@@ -82,7 +91,7 @@ type Connection struct {
 //
 // Where T are whatever data types the function on the other end will return
 // once invoked.
-func (c *Connection) Request(requestName interface{}, sequence ...interface{}) {
+func (c *connection) Request(requestName interface{}, sequence ...interface{}) {
 	if c.Dead() {
 		return
 	}
@@ -136,33 +145,37 @@ func (c *Connection) Request(requestName interface{}, sequence ...interface{}) {
 // For security reasons the string will not contain the stores data, and will
 // instead only contain the length of the store (I.e. how many objects it
 // contains).
-func (c *Connection) String() string {
+func (c *ServerConnection) String() string {
 	return fmt.Sprintf("Connection(%s, Store.Len()=%v, Dead=%t, Method=%s)", c.Address(), c.Store.Len(), c.Dead(), c.Method().String())
+}
+
+func (c *ClientConnection) String() string {
+	return fmt.Sprintf("Connection(%s, Dead=%t, Method=%s)", c.Address(), c.Dead(), c.Method().String())
 }
 
 // Address returns the client address of this connection, usually for logging purposes.
 //
 // Format: ip:port
-func (c *Connection) Address() string {
+func (c *connection) Address() string {
 	// Note: no locking needed, never written to past creation time.
 	return c.address
 }
 
 // Method returns one of the predefined constant methods which represents the
 // method in use by this connection.
-func (c *Connection) Method() Method {
+func (c *connection) Method() Method {
 	// Note: no locking needed, never written to past creation time.
 	return c.method
 }
 
 // Session returns the session object that is associated with this connection.
-func (c *Connection) Session() *Session {
+func (c *ServerConnection) Session() *Session {
 	// Note: no locking needed, never written to past createion time.
 	return c.session
 }
 
 // Dead tells weather this Connection is dead or not.
-func (c *Connection) Dead() bool {
+func (c *connection) Dead() bool {
 	c.access.RLock()
 	defer c.access.RUnlock()
 
@@ -173,7 +186,7 @@ func (c *Connection) Dead() bool {
 // until the connection is dead.
 //
 // If this connection is already dead, this function is no-op.
-func (c *Connection) Kill() {
+func (c *connection) Kill() {
 	if !c.Dead() {
 		// Signal death
 		c.deathWantedNotify <- true
@@ -189,7 +202,7 @@ func (c *Connection) Kill() {
 // An connection is considered killed once it's Kill() method has been called.
 //
 // If this connection is dead, then this function returns nil.
-func (c *Connection) DeathNotify() chan bool {
+func (c *connection) DeathNotify() chan bool {
 	if c.Dead() {
 		return nil
 	}
@@ -202,7 +215,18 @@ func (c *Connection) DeathNotify() chan bool {
 	return ch
 }
 
-func (c *Connection) waitForDeath() {
+func (c *ClientConnection) waitForDeath() {
+	c.connection.waitForDeath()
+	c.deathCompletedNotify <- true
+}
+
+func (c *ServerConnection) waitForDeath() {
+	c.connection.waitForDeath()
+	c.Session().removeConnection(c.key)
+	c.deathCompletedNotify <- true
+}
+
+func (c *connection) waitForDeath() {
 	<-c.deathNotify
 
 	c.access.Lock()
@@ -221,11 +245,9 @@ func (c *Connection) waitForDeath() {
 	}
 
 	logger().Println("DeathNotify():", c)
-	c.Session().removeConnection(c.key)
-	c.deathCompletedNotify <- true
 }
 
-func (c *Connection) disconnectTimer(timeout, rate time.Duration) {
+func (c *connection) disconnectTimer(timeout, rate time.Duration) {
 	c.access.Lock()
 	defer c.access.Unlock()
 
@@ -262,20 +284,36 @@ func (c *Connection) disconnectTimer(timeout, rate time.Duration) {
 	}
 }
 
-func (c *Connection) resetDisconnectTimer() {
+func (c *connection) resetDisconnectTimer() {
 	c.disconnectTimerReset <- true
 }
 
-func newConnection(address string, session *Session, key interface{}, method Method) *Connection {
-	c := new(Connection)
+func newServerConnection(address string, session *Session, key interface{}, method Method) *ServerConnection {
+	c := new(ServerConnection)
+	c.connection = newConnection(address, method)
+
 	c.Store = NewStore()
 	c.key = key // Used for removal from session via removeConnection()
+
+	c.session = session
+	session.addConnection(key, c)
+	return c
+}
+
+func newClientConnection(address string, method Method) *ClientConnection {
+	c := new(ClientConnection)
+	c.connection = newConnection(address, method)
+	return c
+}
+
+func newConnection(address string, method Method) *connection {
+	c := new(connection)
+
 	c.deathNotify = make(chan bool)
 	c.deathWantedNotify = make(chan bool)
 	c.deathCompletedNotify = make(chan bool)
 	c.messageChan = make(chan *message)
 	c.requestCompleters = make(map[float64]interface{})
-	c.session = session
 	c.address = address
 	c.method = method
 
@@ -284,6 +322,5 @@ func newConnection(address string, session *Session, key interface{}, method Met
 	c.performPing = make(chan bool, 1)
 	go c.waitForDeath()
 
-	session.addConnection(key, c)
 	return c
 }

@@ -14,7 +14,7 @@ import (
 	"strconv"
 )
 
-func (c *Connection) lpWaitForDeath() {
+func (c *connection) lpWaitForDeath() {
 	if !c.lpWaitingForDeath {
 		c.lpWaitingForDeath = true
 		go func() {
@@ -30,7 +30,7 @@ func (c *Connection) lpWaitForDeath() {
 	}
 }
 
-func (s *Server) lpHandleLongPoll(w http.ResponseWriter, req *http.Request, session *Session, connection *Connection) {
+func (s *Server) lpHandleLongPoll(w http.ResponseWriter, req *http.Request, session *Session, connection *connection) {
 	// This is an rtLongPoll request, we respond to it when we want to send something to this
 	// connection.
 	//
@@ -93,7 +93,7 @@ func (s *Server) lpHandleLongPoll(w http.ResponseWriter, req *http.Request, sess
 	}
 }
 
-func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, session *Session, connection *Connection) {
+func (s *Server) lpHandleMessage(w http.ResponseWriter, req *http.Request, session *Session, connection *connection) {
 	// This is an rtMessage request, it is either an request or response to one of our requests.
 
 	// We need them to specify and content-length header, we'll check here to make sure they do
@@ -354,7 +354,7 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Create their new connection, using connectionId as the key
-		connection := newConnection(req.RemoteAddr, session, connectionId, LongPolling)
+		connection := newServerConnection(req.RemoteAddr, session, connectionId, LongPolling)
 
 		// Send it to them
 		w.Write([]byte(connectionId))
@@ -422,10 +422,10 @@ func (s *Server) lpHandleRequest(w http.ResponseWriter, req *http.Request) {
 	// We've now got an validated connection and session object, and can continue through with the
 	// rtLongPoll or rtMessage request.
 	if organicsReq == rtLongPoll {
-		s.lpHandleLongPoll(w, req, session, connection)
+		s.lpHandleLongPoll(w, req, session, connection.connection)
 		return
 	} else if organicsReq == rtMessage {
-		s.lpHandleMessage(w, req, session, connection)
+		s.lpHandleMessage(w, req, session, connection.connection)
 		return
 	}
 }

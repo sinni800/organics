@@ -23,7 +23,7 @@ type Session struct {
 	key                               string
 	server                            *Server
 	dead                              bool
-	connections                       map[interface{}]*Connection
+	connections                       map[interface{}]*ServerConnection
 	deathNotify, deathCompletedNotify chan bool
 	deathNotifications                []chan bool
 	hasDataChangedRoutine             bool
@@ -89,15 +89,15 @@ func (s *Session) Kill() {
 // represent this session.
 //
 // If this session is dead, an slice of length zero is returned.
-func (s *Session) Connections() []*Connection {
+func (s *Session) Connections() []*ServerConnection {
 	s.access.RLock()
 	defer s.access.RUnlock()
 
 	if s.dead {
-		return make([]*Connection, 0)
+		return make([]*ServerConnection, 0)
 	}
 
-	connections := make([]*Connection, len(s.connections))
+	connections := make([]*ServerConnection, len(s.connections))
 	i := 0
 	for _, conn := range s.connections {
 		connections[i] = conn
@@ -225,14 +225,14 @@ func (s *Session) removeConnection(key interface{}) {
 	s.access.Unlock()
 }
 
-func (s *Session) addConnection(key interface{}, c *Connection) {
+func (s *Session) addConnection(key interface{}, c *ServerConnection) {
 	s.access.Lock()
 	defer s.access.Unlock()
 
 	s.connections[key] = c
 }
 
-func (s *Session) getConnection(key interface{}) *Connection {
+func (s *Session) getConnection(key interface{}) *ServerConnection {
 	s.access.RLock()
 	defer s.access.RUnlock()
 
@@ -251,7 +251,7 @@ func newSession(key string, server *Server) *Session {
 	s.Store = NewStore()
 	s.server = server
 	s.dead = false
-	s.connections = make(map[interface{}]*Connection)
+	s.connections = make(map[interface{}]*ServerConnection)
 	s.deathNotify = make(chan bool)
 	s.deathCompletedNotify = make(chan bool)
 	s.deathNotifications = make([]chan bool, 0)

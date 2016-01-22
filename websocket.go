@@ -47,7 +47,7 @@ again:
 	return string(data), nil
 }
 
-func (s *Server) webSocketWrite(ws *websocket.Conn, connection *Connection) {
+func (s *host) webSocketWrite(ws *websocket.Conn, connection *connection) {
 	deathNotify := connection.DeathNotify()
 	for {
 		select {
@@ -79,7 +79,7 @@ func (s *Server) webSocketWrite(ws *websocket.Conn, connection *Connection) {
 	}
 }
 
-func (s *Server) webSocketHandleMessage(msg string, ws *websocket.Conn, connection *Connection) {
+func (s *host) webSocketHandleMessage(msg string, ws *websocket.Conn, connection *connection) {
 	// Any message means they're active, sense they sent it to us.
 	connection.resetDisconnectTimer()
 
@@ -197,7 +197,7 @@ func (s *Server) webSocketHandleMessage(msg string, ws *websocket.Conn, connecti
 	}
 }
 
-func (s *Server) webSocketWaitForDeath(ws *websocket.Conn, connection *Connection) {
+func (s *host) webSocketWaitForDeath(ws *websocket.Conn, connection *connection) {
 	// Wait untill someone wants this connection dead
 	select {
 	case <-connection.deathWantedNotify:
@@ -252,10 +252,10 @@ func (s *Server) handleWebSocket(ws *websocket.Conn) {
 	//
 	// In this case, we'll use the actualy websocket connection as the key, since WebSocket is an
 	// connection-based protocol.
-	connection := newConnection(ws.Request().RemoteAddr, session, ws, WebSocket)
+	connection := newServerConnection(ws.Request().RemoteAddr, session, ws, WebSocket)
 
-	go s.webSocketWrite(ws, connection)
-	go s.webSocketWaitForDeath(ws, connection)
+	go s.webSocketWrite(ws, connection.connection)
+	go s.webSocketWaitForDeath(ws, connection.connection)
 	connection.disconnectTimer(s.PingTimeout(), s.PingRate())
 
 	s.doConnectHandler(connection)
@@ -275,7 +275,7 @@ func (s *Server) handleWebSocket(ws *websocket.Conn) {
 				logger().Println(fmt.Sprint(e))
 			}
 		}()
-		s.webSocketHandleMessage(msg, ws, connection)
+		s.webSocketHandleMessage(msg, ws, connection.connection)
 	}
 }
 
