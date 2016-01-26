@@ -456,24 +456,16 @@ func (s *Server) Kill() {
 // NewServer returns an new, and initialized Server.
 func NewServer(sessionProvider SessionProvider) *Server {
 	s := new(Server)
+	s.host = newHost()
 	s.sessions = make(map[interface{}]*Session)
 	s.origins = make(map[string]bool)
 	s.requestHandlers = make(map[interface{}]interface{})
 	s.sessionProvider = sessionProvider
 	s.webSocketServer = s.makeWebSocketServer()
 
-	// Max message size: 1MB
-	s.maxBufferSize = 1 * 1024 * 1024
-
 	// Size in bytes
 	s.sessionKeySize = 64
-
-	// Ping response every 5 minutes
-	s.pingRate = 5 * time.Minute
-
-	// Consider connection dead if no ping response in 30 seconds
-	s.pingTimeout = 30 * time.Second
-
+	
 	// Stop saving session data 30 seconds after it's death.
 	s.sessionTimeout = 30 * time.Second
 	return s

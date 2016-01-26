@@ -12,6 +12,21 @@ type host struct {
 	pingRate, pingTimeout time.Duration
 }
 
+func newHost() host {
+	h := host{}
+	
+	// Max message size: 1MB
+	h.maxBufferSize = 1 * 1024 * 1024
+
+	// Ping response every 5 minutes
+	h.pingRate = 5 * time.Minute
+
+	// Consider connection dead if no ping response in 30 seconds
+	h.pingTimeout = 30 * time.Second
+	
+	return h
+}
+
 // Utility function to retrieve request handler for specified request name.
 //
 // Assumes server lock is not currently held.

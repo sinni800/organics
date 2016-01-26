@@ -51,7 +51,6 @@ type connection struct {
 	deathNotifications                                       []chan bool
 	address                                                  string
 	method                                                   Method
-	session                                                  *Session
 	disconnectFromTimeout, disconnectTimerReset, performPing chan bool
 	lpWaitingForDeath, hasDisconnectTimer                    bool
 
@@ -69,6 +68,14 @@ type ServerConnection struct {
 	*connection
 	key                                                      interface{}
 	session                                                  *Session
+}
+
+func (c *ServerConnection) Request(requestName interface{}, sequence ...interface{}) {
+	if c.session.Dead() {
+		return
+	}
+
+	c.connection.Request(requestName, sequence...)
 }
 
 // Request makes an request to the other end of this Connection.
@@ -93,10 +100,6 @@ type ServerConnection struct {
 // once invoked.
 func (c *connection) Request(requestName interface{}, sequence ...interface{}) {
 	if c.Dead() {
-		return
-	}
-
-	if c.session.Dead() {
 		return
 	}
 
@@ -125,7 +128,11 @@ func (c *connection) Request(requestName interface{}, sequence ...interface{}) {
 			args = sequence
 			id = -1 // Never send response to us, please.
 		}
+	}  else {
+		args = make([]interface{}, 0, 0)
 	}
+	
+	
 
 	go func() {
 		select {

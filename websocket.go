@@ -201,6 +201,7 @@ func (s *host) webSocketWaitForDeath(ws *websocket.Conn, connection *connection)
 	// Wait untill someone wants this connection dead
 	select {
 	case <-connection.deathWantedNotify:
+		logger().Println("someone wants this conn dead")
 		break
 
 	case <-connection.disconnectFromTimeout:

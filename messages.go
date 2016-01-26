@@ -104,6 +104,7 @@ func (m *message) jsonEncode() (encoded []byte, err error) {
 // JsonDecode decodes the data parameter, an array of JSON-encoded []byte, into
 // this *message, m, or returns an error if one is encountered.
 func (m *message) jsonDecode(data []byte) error {
+	logger().Println(string(data))
 	var decoded []interface{}
 	err := json.Unmarshal(data, &decoded)
 	if err != nil {

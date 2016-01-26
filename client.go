@@ -6,6 +6,7 @@ import(
 	"io"
 	"fmt"
 	"reflect"
+	"net/http"
 )
 
 type Client struct {
@@ -15,6 +16,7 @@ type Client struct {
 	origin string
 	connected bool
 	Connection *ClientConnection
+	session *http.CookieJar
 }
 
 func NewClient(url string, tls bool, origin string) *Client {
@@ -23,6 +25,7 @@ func NewClient(url string, tls bool, origin string) *Client {
 	}
 	
 	c := new(Client)
+	c.host = newHost()
 	
 	if tls {
 		url = "wss://" + url
@@ -32,42 +35,54 @@ func NewClient(url string, tls bool, origin string) *Client {
 	
 	c.url = url	
 	c.tls = tls	
+	c.origin = origin
 	
 	return c
+}
+
+func (c *Client) Request(requestName interface{}, sequence ...interface{}) {
+	c.Connection.Request(requestName, sequence...)
 }
 
 func (c *Client) Connect() error {
 	ws, err := websocket.Dial(c.url, "", c.origin)
 
 	if err != nil {
+		println("err in ws: " + err.Error() + " arg " + c.url + " " + c.origin)
 		return err
 	}
 
-	connection := newClientConnection(ws.Request().RemoteAddr, WebSocket)
+	connection := newClientConnection(c.url, WebSocket)
 
 	go c.webSocketWrite(ws, connection.connection)
 	go c.webSocketWaitForDeath(ws, connection.connection)
 	connection.disconnectTimer(c.PingTimeout(), c.PingRate())
 
-	c.doConnectHandler(connection)
-
-	for {
-		msg, err := receiveMessage(ws, c.MaxBufferSize())
-		if err != nil {
-			if err != io.EOF {
-				logger().Println("receiveMessage() failed:", err)
+	//c.doConnectHandler(connection)
+	
+	c.Connection = connection
+	
+	go func() {
+		for {
+			msg, err := receiveMessage(ws, c.MaxBufferSize())
+			if err != nil {
+				if err != io.EOF {
+					logger().Println("receiveMessage() failed:", err)
+				}
+				connection.Kill()
+				c.Connect()
+				break
 			}
-			connection.Kill()
-			break
+	
+			defer func() {
+				if e := recover(); e != nil {
+					logger().Println(fmt.Sprint(e))
+				}
+			}()
+			c.webSocketHandleMessage(msg, ws, connection.connection)
 		}
-
-		defer func() {
-			if e := recover(); e != nil {
-				logger().Println(fmt.Sprint(e))
-			}
-		}()
-		s.webSocketHandleMessage(msg, ws, connection)
-	}
+	}()
+	return nil
 }
 
 // Handle defines that when an request with the specified requestName comes in,
