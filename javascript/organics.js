@@ -940,7 +940,11 @@ var Organics = new function() {
 
 
 		if(!Organics.__hasAlreadyLoaded) {
-			Organics.__addEventListener(window, "load", doConnect);
+			if(document.readyState === 'complete') {
+				doConnect();
+			} else {
+				Organics.__addEventListener(window, "load", doConnect);
+			}
 			Organics.__hasAlreadyLoaded = true;
 		} else {
 			doConnect();
